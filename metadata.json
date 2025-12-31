@@ -1,5 +1,7 @@
 {
   "name": "Planner de Refeições Inteligente",
   "description": "Uma aplicação para planeamento semanal de refeições focada em metas calóricas e proteicas, com geração automática de receitas e lista de compras inteligente.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

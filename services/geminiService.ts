@@ -3,24 +3,60 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Ingredient, WeeklyPlan } from "../types";
 import { TARGET_KCALS_DAY, TARGET_PROTEIN_DAY } from "../constants";
 
+export const identifyFood = async (base64Image: string): Promise<Partial<Ingredient>> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  
+  const prompt = "Identifica este alimento. Retorna apenas um JSON com as propriedades: name (nome em português), category (apenas uma destas: Fruta, Proteína, Secos, Laticínios, Outros), kcalPer100 (estimativa de calorias por 100g ou unidade), proteinPer100 (estimativa de proteína por 100g ou unidade), unit (deve ser 'g', 'ml' ou 'unidade'). Se for uma peça inteira como fruta, usa 'unidade'.";
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: base64Image,
+            },
+          },
+        ],
+      },
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          category: { type: Type.STRING },
+          kcalPer100: { type: Type.NUMBER },
+          proteinPer100: { type: Type.NUMBER },
+          unit: { type: Type.STRING }
+        },
+        required: ["name", "category", "kcalPer100", "proteinPer100", "unit"]
+      }
+    }
+  });
+
+  return JSON.parse(response.text);
+};
+
 export const generateMealPlan = async (
   selectedIngredients: Ingredient[],
   daysCount: number = 7
 ): Promise<WeeklyPlan> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
-  const prompt = `Cria um plano de refeições detalhado para ${daysCount} dias. 
-  Alvos diários: ~${TARGET_KCALS_DAY} kcal e ~${TARGET_PROTEIN_DAY}g de proteína.
-  Ingredientes disponíveis: ${selectedIngredients.map(i => `${i.name} (Unidade: ${i.unit})`).join(', ')}.
+  const prompt = `Cria um plano de refeições para ${daysCount} dias. 
+  Meta Diária: ~${TARGET_KCALS_DAY} kcal e ~${TARGET_PROTEIN_DAY}g de proteína.
   
-  Regras cruciais de QUANTIDADES e UNIDADES:
-  1. Para ingredientes com unidade 'unidade' (como Laranja, Banana, Maçã), a quantidade DEVE ser o número de peças (ex: 1, 0.5, 2). NÃO use gramas para estes.
-  2. Para ingredientes com unidade 'g' ou 'ml', use a quantidade exata necessária (ex: 150g, 200ml).
-  3. Seja realista: uma pessoa não come 50 bananas numa semana. Planeie quantidades normais para um ser humano.
-  4. 5 refeições: Pequeno-almoço, Lanche da manhã, Almoço, Lanche da tarde, Jantar.
-  5. Usa APENAS ingredientes da lista acima.
-  6. Formato JSON: { "days": [ { "day": 1, "meals": [...] } ] }
-  7. Atribua IDs únicos às refeições.`;
+  REGRAS ABSOLUTAS:
+  1. Usa EXCLUSIVAMENTE os ingredientes desta lista: ${selectedIngredients.map(i => `${i.name} (Unidade: ${i.unit})`).join(', ')}. NÃO adiciones temperos, óleos ou complementos que não estejam na lista.
+  2. Distribuição Calórica Realista: O almoço e o jantar devem ser as refeições principais (mais calóricas). Pequeno-almoço e lanches devem ser mais leves. O importante é o total do dia bater ${TARGET_KCALS_DAY} kcal.
+  3. Receitas: Descreve como preparar usando apenas os itens listados.
+  4. Quantidades: Respeita as unidades (se unit=unidade, usa números inteiros ou decimais pequenos; se unit=g, usa gramas).
+  5. Formato JSON: { "days": [ { "day": 1, "meals": [...] } ] }`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
